@@ -17,6 +17,7 @@ the model details are not known beforehand.
 import os, sys
 import datetime
 import gc
+import numpy as np
 
 from .traitlets import Instance, Bool, List, Dict
 from .base import (VariableKiosk, WeatherDataProvider,
@@ -115,10 +116,10 @@ class Engine(BaseEngine):
     _saved_terminal_output = Dict()
 
     def __init__(self, parameterprovider, weatherdataprovider, agromanagement, config=None,
-                 output_vars=None, summary_vars=None, terminal_vars=None):
+                 output_vars=None, summary_vars=None, terminal_vars=None, task_config=None):
 
         BaseEngine.__init__(self)
-
+        self._task_config = task_config
         # Load the model configuration
         if config is not None:
             self.mconf = ConfigurationLoader(config)
@@ -137,6 +138,7 @@ class Engine(BaseEngine):
 
         # Placeholder for variables to be saved during a model run
         self._saved_output = list()
+        self._saved_input = list()
         self._saved_summary_output = list()
         self._saved_terminal_output = dict()
 
@@ -144,6 +146,7 @@ class Engine(BaseEngine):
         # handling output and terminating the system
         self._connect_signal(self._on_CROP_START, signal=signals.crop_start)
         self._connect_signal(self._on_CROP_FINISH, signal=signals.crop_finish)
+        
         self._connect_signal(self._on_OUTPUT, signal=signals.output)
         self._connect_signal(self._on_TERMINATE, signal=signals.terminate)
 
@@ -177,11 +180,15 @@ class Engine(BaseEngine):
             self.crop.calc_rates(day, drv)
 
         if self.soil is not None:
+            irr = self.soil.waterbalance._RIRR
+            fer = self.soil.nutrientbalance.rates.FERT_N_SUPPLY
             self.soil.calc_rates(day, drv)
+            
 
         # Save state variables of the model
         if self.flag_output:
             self._save_output(day)
+            self._save_input(day,drv,irr,fer)
 
         # Check if flag is present to finish crop simulation
         if self.flag_crop_finish:
@@ -355,7 +362,15 @@ class Engine(BaseEngine):
             drv.add_variable("TEMP", (drv.TMIN + drv.TMAX)/2., "Celcius")
         if not hasattr(drv, "DTEMP"):
             drv.add_variable("DTEMP", (drv.TEMP + drv.TMAX)/2., "Celcius")
-
+            # drv.DTEMP
+        if self._task_config[0] == 2:
+            dis_T = np.random.uniform(-3, 3, 1)[0]
+            drv.TMAX = drv.TMAX + dis_T
+            drv.TMIN = drv.TMIN + dis_T
+            drv.TEMP = drv.TEMP + dis_T
+            # drv.VAP = drv.VAP * np.random.uniform(0.5, 1.5, 1)[0]
+            # drv.WIND = drv.WIND * np.random.uniform(0.5, 1.5, 1)[0]
+            drv.IRRAD = min(drv.IRRAD * np.random.uniform(0.8, 1.2, 1)[0],40000000.0)
         return drv
 
     def _save_output(self, day):
@@ -369,6 +384,20 @@ class Engine(BaseEngine):
         for var in self.mconf.OUTPUT_VARS:
             states[var] = self.get_variable(var)
         self._saved_output.append(states)
+        
+    def _save_input(self, day,drv,irr,fer):
+        """Appends selected model variables to self._saved_output for this day.
+        """
+        # Switch off the flag for generating output
+        self.flag_output = False
+
+        # find current value of variables to are to be saved
+        states = {"day":day}
+        for var in drv.required+["TEMP","DTEMP","E0","ES0","ET0"]:
+            states[var] = getattr(drv, var)
+        states["irr"] = irr
+        states["fer"] = fer
+        self._saved_input.append(states)
 
     def _save_summary_output(self):
         """Appends selected model variables to self._saved_summary_output.
@@ -534,10 +563,12 @@ class CGMSEngine(Engine):
             # Still retain output if flag is set
             if self.flag_output:
                 self._save_output(self.day)
+                self._save_drv(self.day,self.drv)
         else:
             # Do nothing but still retain output if flag is set
             if self.flag_output:
                 self._save_output(self.day)
+                self._save_drv(self.day,self.drv)
 
     def _on_CROP_FINISH(self, day, *args, **kwargs):
         """Sets the variable 'flag_crop_finish' to True when the signal

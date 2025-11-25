@@ -152,6 +152,7 @@ class N_Soil_Dynamics(SimulationObject):
         s = self.states
         p = self.params
         k = self.kiosk
+        
 
         r.RNSOIL = -max(0., min(p.NSOILBASE_FR * self.NSOILI, s.NSOIL))
 

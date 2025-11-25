@@ -64,11 +64,15 @@ LOG_CONFIG = \
                     },
                 },
                 'handlers': {
-                    'console': {
-                        'level':LOG_LEVEL_CONSOLE,
-                        'class':'logging.StreamHandler',
-                        'formatter':'brief'
+                    #'console': {
+                    #    'level':LOG_LEVEL_CONSOLE,
+                    #    'class':'logging.StreamHandler',
+                    #    'formatter':'brief'
+                    #},
+                    "null":{
+                    "class":"logging.NullHandler"
                     },
+                    
                     'file': {
                         'level':LOG_LEVEL_FILE,
                         'class':'logging.handlers.RotatingFileHandler',
@@ -81,7 +85,7 @@ LOG_CONFIG = \
                     },
                 },
                 'root': {
-                         'handlers': ['console', 'file'],
+                         'handlers': ['null'],
                          'propagate': True,
                          'level':'NOTSET'
                 }

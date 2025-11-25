@@ -36,6 +36,8 @@ class BaseSoilWrapper(SimulationObject):
     def calc_rates(self, day, drv):
         if self.waterbalance_class is not None:
             self.waterbalance.calc_rates(day, drv)
+
+
         if self.nutrientbalance_class is not None:
             self.nutrientbalance.calc_rates(day, drv)
 
