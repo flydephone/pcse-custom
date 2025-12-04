@@ -8,6 +8,7 @@ import os
 import datetime as dt
 import csv
 import math
+import io  # Added for string stream handling
 
 from ast import literal_eval
 
@@ -78,7 +79,7 @@ def kPa_to_hPa(x, d):
 
 
 class CSVWeatherDataProvider(WeatherDataProvider):
-    """Reading weather data from a CSV file.
+    """Reading weather data from a CSV file or directly from a CSV string.
 
     :param csv_fname: name of the CSV file to be read
     :param delimiter: CSV delimiter
@@ -86,6 +87,8 @@ class CSVWeatherDataProvider(WeatherDataProvider):
     :keyword ETmodel: "PM"|"P" for selecting Penman-Monteith or Penman
         method for reference evapotranspiration. Default is 'PM'.
     :param force_reload: Ignore cache file and reload from the CSV file
+    :param csv_content: Raw string content of the CSV data (optional). 
+                        If provided, csv_fname is ignored.
 
     The CSV file should have the following structure (sample), missing values should be added as 'NaN'::
 
@@ -139,23 +142,42 @@ class CSVWeatherDataProvider(WeatherDataProvider):
         "SNOWDEPTH": NoConversion
     }
 
-    def __init__(self, csv_fname, delimiter=',', dateformat='%Y%m%d',
-                 ETmodel='PM', force_reload=False):
+    def __init__(self, csv_fname=None, delimiter=',', dateformat='%Y%m%d',
+                 ETmodel='PM', force_reload=False, csv_content=None):
         WeatherDataProvider.__init__(self)
 
-        self.fp_csv_fname = os.path.abspath(csv_fname)
         self.dateformat = dateformat
         self.ETmodel = ETmodel
-        if not os.path.exists(self.fp_csv_fname):
-            msg = "Cannot find weather file at: %s" % self.fp_csv_fname
+        
+        # 1. Option: Read from File (Original behavior)
+        if csv_fname is not None:
+            self.fp_csv_fname = os.path.abspath(csv_fname)
+            if not os.path.exists(self.fp_csv_fname):
+                msg = "Cannot find weather file at: %s" % self.fp_csv_fname
+                raise PCSEError(msg)
+
+            if force_reload or not self._load_cache_file(self.fp_csv_fname):
+                with open(self.fp_csv_fname, 'r') as csv_file:
+                    self._parse_csv_content(csv_file, delimiter)
+                self._write_cache_file(self.fp_csv_fname)
+
+        # 2. Option: Read from String Content directly
+        elif csv_content is not None:
+            # We treat the string content as a file stream using StringIO
+            # Note: Caching is not supported for direct content
+            csv_file = io.StringIO(csv_content)
+            self._parse_csv_content(csv_file, delimiter)
+            csv_file.close()
+
+        else:
+            msg = "CSVWeatherDataProvider: You must provide either 'csv_fname' or 'csv_content'."
             raise PCSEError(msg)
 
-        if force_reload or not self._load_cache_file(self.fp_csv_fname):
-            with open(csv_fname, 'r') as csv_file:
-                csv_file.readline()  # Skip first line
-                self._read_meta(csv_file)
-                self._read_observations(csv_file, delimiter)
-            self._write_cache_file(self.fp_csv_fname)
+    def _parse_csv_content(self, csv_file, delimiter):
+        """Helper to parse the CSV content from a file-like object."""
+        csv_file.readline()  # Skip first line
+        self._read_meta(csv_file)
+        self._read_observations(csv_file, delimiter)
 
     def _read_meta(self, csv_file):
         header = {}
